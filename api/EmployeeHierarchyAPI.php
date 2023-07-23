@@ -3,6 +3,7 @@
 namespace api;
 
 use api\DatabaseManager;
+use Dotenv\Dotenv;
 
 class EmployeeHierarchyAPI
 {
@@ -11,8 +12,10 @@ class EmployeeHierarchyAPI
 
     public function __construct()
     {
+        $dotenv = Dotenv::createImmutable(__DIR__ . '/../'); // Assuming the .env file is in the project root directory
+        $dotenv->load();
         $this->databaseManager = new DatabaseManager();
-        $this->validTokens = ["your_secret_token_here"];
+        $this->validTokens = [$_ENV['SECRET_TOKEN']];
     }
 
     private function isAuthorized($token): bool
