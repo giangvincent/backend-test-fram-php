@@ -2,24 +2,31 @@
 
 namespace api;
 
+use Dotenv\Dotenv;
+
 class DatabaseManager
 {
     private $db;
 
     public function __construct()
     {
-        $host = '127.0.0.1:3306'; // Replace with your MySQL host address
-        $user = 'admin'; // Replace with your MySQL username
-        $password = 'abcd1234'; // Replace with your MySQL password
-        $dbName = 'backend_test_1';
+        $dotenv = Dotenv::createImmutable(__DIR__ . '/../'); // Assuming the .env file is in the project root directory
+        $dotenv->load();
 
-        $this->db = new \mysqli($host, $user, $password, $dbName);
+        $dbHost = '127.0.0.1';
+        $dbPort = '3306';
+        $dbName = $_ENV['MYSQL_DATABASE'];
+        $dbUser = $_ENV['MYSQL_USER'];
+        $dbPass = $_ENV['MYSQL_PASSWORD'];
 
-        if ($this->db->connect_error) {
-            die("Connection failed: " . $this->db->connect_error);
+        try {
+            $dsn = "mysql:host=$dbHost;port=$dbPort;dbname=$dbName";
+            $this->db = new \PDO($dsn, $dbUser, $dbPass);
+            $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $this->createTables();
+        } catch (\PDOException $e) {
+            die("Connection failed: " . $e->getMessage());
         }
-
-        $this->createTables();
     }
 
     private function createTables(): void
@@ -29,12 +36,14 @@ class DatabaseManager
                     supervisor VARCHAR(255),
                     inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                   )";
-        if (!$this->db->query($query)) {
-            die("Error creating table: " . $this->db->error);
+        try {
+            $this->db->exec($query);
+        } catch (\PDOException $e) {
+            die("Error creating table: " . $e->getMessage());
         }
     }
 
-    public function addEmployeeHierarchy($data): array|string
+    public function addEmployeeHierarchy($data): array
     {
         $values = [];
         $messages = [];
@@ -45,35 +54,39 @@ class DatabaseManager
                 $countEmptyData++;
                 continue;
             }
-            $values[] = "('$employee', '$supervisor', CURRENT_TIMESTAMP)";
+            $values[] = [$employee, $supervisor];
         }
 
         if ($countEmptyData > 0) {
             $messages[] = "Found $countEmptyData empty relationship";
         }
-        $valuesString = implode(', ', $values);
 
-        $query = "INSERT IGNORE INTO employee_hierarchy (employee, supervisor, inserted_at) VALUES $valuesString";
-        if (!$this->db->query($query)) {
-            $messages[] = "Error storing hierarchy data.";
-        }
-
-        $insertedCount = $this->db->affected_rows;
-
-        if ($insertedCount === 0) {
-            $messages[] = "No new data to insert.";
-        } else {
-            $messages[] = "Inserted $insertedCount employee hierarchy data.";
-        }
-
-        // Check for loops or multiple roots
-        if ($insertedCount && !$this->validateHierarchy()) {
-            // If validation fails, remove the inserted data
-            $query = "DELETE FROM employee_hierarchy WHERE inserted_at = CURRENT_TIMESTAMP";
-            if (!$this->db->query($query)) {
-                $messages[] = "Error deleting inserted data.";
+        $placeholders = implode(', ', array_fill(0, count($values), '(?, ?, CURRENT_TIMESTAMP)'));
+        $query = "INSERT IGNORE INTO employee_hierarchy (employee, supervisor, inserted_at) VALUES $placeholders";
+        try {
+            $stmt = $this->db->prepare($query);
+            foreach ($values as $index => $row) {
+                $stmt->bindValue(($index * 2) + 1, $row[0]);
+                $stmt->bindValue(($index * 2) + 2, $row[1]);
             }
-            $messages[] = "Invalid employee hierarchy. Loops roots found. Deleted $insertedCount employee";
+            $stmt->execute();
+            $insertedCount = $stmt->rowCount();
+            $stmt->closeCursor();
+
+            if ($insertedCount === 0) {
+                $messages[] = "No new data to insert.";
+            } else {
+                $messages[] = "Inserted $insertedCount employee hierarchy data.";
+            }
+
+            // Check for loops or multiple roots
+            if ($insertedCount && !$this->validateHierarchy()) {
+                // If validation fails, remove the inserted data
+                $this->db->exec("DELETE FROM employee_hierarchy WHERE inserted_at = CURRENT_TIMESTAMP");
+                $messages[] = "Invalid employee hierarchy. Loops roots found. Deleted $insertedCount employee";
+            }
+        } catch (\PDOException $e) {
+            $messages[] = "Error storing hierarchy data.";
         }
 
         return $messages;
@@ -87,17 +100,11 @@ class DatabaseManager
 
             $query = "SELECT supervisor FROM employee_hierarchy WHERE employee = ?";
             $stmt = $this->db->prepare($query);
-            $stmt->bind_param('s', $employee);
-            $stmt->execute();
-            $result = $stmt->get_result();
+            $stmt->execute([$employee]);
+            $result = $stmt->fetchAll(\PDO::FETCH_COLUMN);
 
-            while ($row = $result->fetch_assoc()) {
-                $supervisor = $row['supervisor'];
-
-                if (
-                    (!isset($visited[$supervisor]) && $this->findLoops($supervisor, $visited, $recStack)) ||
-                    $recStack[$supervisor]
-                ) {
+            foreach ($result as $supervisor) {
+                if ((!isset($visited[$supervisor]) && $this->findLoops($supervisor, $visited, $recStack)) || $recStack[$supervisor]) {
                     return true;
                 }
             }
@@ -111,12 +118,8 @@ class DatabaseManager
     {
         // Check for loops
         $query = "SELECT employee FROM employee_hierarchy";
-        $result = $this->db->query($query);
-        $employees = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $employees[] = $row['employee'];
-        }
+        $stmt = $this->db->query($query);
+        $employees = $stmt->fetchAll(\PDO::FETCH_COLUMN);
 
         $visited = [];
         $recStack = [];
@@ -130,17 +133,14 @@ class DatabaseManager
         return true;
     }
 
-
     private function buildHierarchy($supervisor, $hierarchy): array
     {
         $query = "SELECT employee FROM employee_hierarchy WHERE supervisor = ?";
         $stmt = $this->db->prepare($query);
-        $stmt->bind_param('s', $supervisor);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        $stmt->execute([$supervisor]);
+        $result = $stmt->fetchAll(\PDO::FETCH_COLUMN);
 
-        while ($row = $result->fetch_assoc()) {
-            $employee = $row['employee'];
+        foreach ($result as $employee) {
             $hierarchy[$employee] = $this->buildHierarchy($employee, []);
         }
 
@@ -150,11 +150,12 @@ class DatabaseManager
     public function getEmployeeHierarchy(): array
     {
         $query = "SELECT DISTINCT supervisor FROM employee_hierarchy WHERE supervisor NOT IN (SELECT employee FROM employee_hierarchy)";
-        $result = $this->db->query($query);
+        $stmt = $this->db->query($query);
+        $supervisors = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+
         $hierarchy = [];
 
-        while ($row = $result->fetch_assoc()) {
-            $supervisor = $row['supervisor'];
+        foreach ($supervisors as $supervisor) {
             $hierarchy[$supervisor] = $this->buildHierarchy($supervisor, []);
         }
 
@@ -165,32 +166,22 @@ class DatabaseManager
     {
         $query = "SELECT supervisor FROM employee_hierarchy WHERE employee = ?";
         $stmt = $this->db->prepare($query);
-        $stmt->bind_param('s', $employee);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        $stmt->execute([$employee]);
+        $result = $stmt->fetchAll(\PDO::FETCH_COLUMN);
 
-        if ($result->num_rows === 0) {
+        if (empty($result)) {
             return []; // Employee not found
         }
 
-        $row = $result->fetch_assoc();
-        $supervisor = $row['supervisor'];
-
-        if (!$supervisor) {
-            return []; // No supervisor for the employee
-        }
-
-        return [$supervisor];
+        return $result;
     }
 
     public function getSupervisorHierarchy($employee): array
     {
         $supervisorHierarchy = [];
-
-        $employee = [$employee];
-        while ($supervisor = $this->getSupervisor($employee[0])) {
+        while ($supervisor = $this->getSupervisor($employee)) {
             $supervisorHierarchy[] = $supervisor[0];
-            $employee = $supervisor;
+            $employee = $supervisor[0];
         }
         return $supervisorHierarchy;
     }

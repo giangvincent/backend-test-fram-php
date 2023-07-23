@@ -3,7 +3,6 @@
 namespace api;
 
 use api\DatabaseManager;
-
 class EmployeeHierarchyAPI
 {
     private $databaseManager;
@@ -45,8 +44,9 @@ class EmployeeHierarchyAPI
             $this->validateAuthorizationHeader();
             $json = file_get_contents('php://input');
             $data = json_decode($json, true);
+            var_dump($data);
             if (!$data) {
-                return "Invalid JSON format.";
+                return json_encode("Invalid JSON format.");
             }
             $response = $this->databaseManager->addEmployeeHierarchy($data);
         } elseif ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['query'])) {
