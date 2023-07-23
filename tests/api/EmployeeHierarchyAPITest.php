@@ -35,7 +35,7 @@ class EmployeeHierarchyAPITest extends TestCase
         $headers = ['Authorization' => "Bearer $validToken", 'Content-Type' => 'application/json'];
 
         // Act
-        $response = $this->httpClient->post('/path/to/endpoint', [
+        $response = $this->httpClient->post($_ENV['ENDPOINT'], [
             'headers' => $headers,
             'body' => $json,
         ]);
@@ -56,7 +56,7 @@ class EmployeeHierarchyAPITest extends TestCase
         $headers = ['Authorization' => "Bearer $validToken", 'Content-Type' => 'application/json'];
 
         // Act
-        $response = $this->httpClient->post('/path/to/endpoint', [
+        $response = $this->httpClient->post($_ENV['ENDPOINT'], [
             'headers' => $headers,
             'body' => $invalidJson,
         ]);
@@ -73,7 +73,7 @@ class EmployeeHierarchyAPITest extends TestCase
         $headers = ['Authorization' => "Bearer $validToken"];
 
         // Act
-        $response = $this->httpClient->get('/path/to/endpoint', [
+        $response = $this->httpClient->get($_ENV['ENDPOINT'], [
             'headers' => $headers,
             'query' => ['query' => 'invalid_query'],
         ]);
@@ -90,7 +90,7 @@ class EmployeeHierarchyAPITest extends TestCase
         $headers = ['Authorization' => "Bearer $validToken"];
 
         // Act
-        $response = $this->httpClient->put('/path/to/endpoint', [
+        $response = $this->httpClient->put($_ENV['ENDPOINT'], [
             'headers' => $headers,
         ]);
 

@@ -1,22 +1,23 @@
-# Use the PHP 8.1 image for Apple Silicon (ARM64)
+# Use the official PHP image
 FROM php:8.1-fpm
 
-# Install additional PHP extensions if needed
-# For example, if you need pdo_mysql extension:
-RUN docker-php-ext-install pdo_mysql
+# Install system dependencies and PHP extensions
+RUN apt-get update && apt-get install -y \
+    nginx \
+    libpng-dev \
+    && docker-php-ext-install pdo pdo_mysql gd
 
-# Set the working directory in the container
+# Copy Nginx configuration
+COPY nginx.conf /etc/nginx/sites-available/default
+
+# Set working directory
 WORKDIR /var/www/html
 
-# Copy your PHP application files to the container
+# Copy the PHP application files to the container
 COPY . /var/www/html
 
-# Install and configure Nginx
-RUN apt-get update && apt-get install -y nginx
-COPY nginx/default /etc/nginx/sites-available/default
+# Expose port 80 to access the web server
+EXPOSE 80
 
-# Expose port 8000
-EXPOSE 8000
-
-# Start the PHP-FPM and Nginx services
-CMD service php8.1-fpm start && nginx -g 'daemon off;'
+# Start Nginx and PHP-FPM
+CMD service nginx start && php-fpm

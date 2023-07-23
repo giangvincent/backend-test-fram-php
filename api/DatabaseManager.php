@@ -13,14 +13,14 @@ class DatabaseManager
         $dotenv = Dotenv::createImmutable(__DIR__ . '/../'); // Assuming the .env file is in the project root directory
         $dotenv->load();
 
-        $dbHost = '127.0.0.1';
-        $dbPort = '3306';
+        $dbHost = $_ENV['MYSQL_HOST'];
+        $dbPort = $_ENV['MYSQL_PORT'];
         $dbName = $_ENV['MYSQL_DATABASE'];
         $dbUser = $_ENV['MYSQL_USER'];
         $dbPass = $_ENV['MYSQL_PASSWORD'];
+        $dsn = "mysql:host=$dbHost;port=$dbPort;dbname=$dbName";
 
         try {
-            $dsn = "mysql:host=$dbHost;port=$dbPort;dbname=$dbName";
             $this->db = new \PDO($dsn, $dbUser, $dbPass);
             $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
             $this->createTables();
